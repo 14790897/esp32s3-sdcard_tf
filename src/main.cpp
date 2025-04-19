@@ -44,8 +44,8 @@ const char index_html[] PROGMEM = R"rawliteral(
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta charset="UTF-8">
   <title>ESP32 SD卡文件管理</title>
-  <!-- 添加网站图标 - Base64编码的SD卡图标 -->
-  <link rel="icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAABHNCSVQICAgIfAhkiAAAAAlwSFlzAAAA7AAAAOwBeShxvQAAABl0RVh0U29mdHdhcmUAd3d3Lmlua3NjYXBlLm9yZ5vuPBoAAAH3SURBVFiF7Ze/S1tRFMc/532TZ2KhCK2og0MqOBSH/gUZM3Vw6KZ/g+DgKK46OHQQRIROHTp06FCkdHEuBaWDFMQgdSg4CZXaJO/d04EYG5O8l7wXSqHf6d5zf5zv5dx7zrkQExMT8wdjtZWXu/7b9RUNGGAkUC3BRNnR8XbJbW5Gl5gweiK36bQUemtvDpQP1JXw2OHdU9dtPrOBcjcocfLkDdxQ5CugECSRAUMNcXXordAMEj8RAwClofR7MRwEzZ+IgfLAe1XwOlwhCwPvVSHqBxvagB1kP9UNtRrWwH8/BUETkWgKeiSwgZr/MazrLxBRP8xOdsB1m8+My9dQiQTwiHv5SRxdKbvua/FetPpA26tPbE/9YyzGKSiy5umQeHp087jhvxZYKG98BFkIijgmL1xvvho0EWUIlLvegkCo/j+96LqjFe9FSwPWtLcEMhokcaz2du7YuDWagvELfZ9qyjpmsqXr999Q7ejYLRXIT8ADkKtCZs9Obf4I2x82BHZqc1XgIyAHaOnY2Il63BLYLRXIAw+PQ+JX7LXhu7AXAzfgJMxsUEXm93o23oWpB/7YAb/ivsiIrySfhrGBjgzYqc3V4ydXp1JL977aArCsqnPAbtg2OjYgIgsisgj3qx0fQFWXgZGwbcTExPzd/AKBohGeunDTDAAAAABJRU5ErkJggg==">
+  <!-- 网站图标，使用在线网址 -->
+  <link rel="icon" href="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f4be.png">
   <style>
     :root {
       --primary-color: #4a89dc;
