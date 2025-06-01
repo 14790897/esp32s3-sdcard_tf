@@ -7,6 +7,7 @@
 #include "sd_read_write.h"
 #include "SD_MMC.h"
 #include "psram_buffer.h"
+#include "esp_task_wdt.h"
 
 // Reference to the global PSRAM buffer defined in sd_read_write.cpp
 extern PSRAMBuffer g_psramBuffer;
@@ -669,11 +670,38 @@ void setup() {
     if (psramFound())
     {
       Serial.println("\nPSRAM is available!");
-      printPSRAMInfo();
+      printPSRAMInfo(true);
+
+      // Initialize PSRAM buffer with maximum size for best performance
+      size_t maxSize = g_psramBuffer.calculateOptimalSize(PSRAM_BUFFER_SIZE_MAX);
+      if (g_psramBuffer.init(maxSize))
+      {
+        Serial.printf("Successfully initialized PSRAM buffer with %u bytes (%.2f KB)\n",
+                      g_psramBuffer.getSize(), g_psramBuffer.getSize() / 1024.0);
+        if (g_psramBuffer.isPSRAM())
+        {
+          Serial.println("Buffer is in PSRAM - SD card operations will be faster");
+        }
+        else
+        {
+          Serial.println("Buffer is in regular memory - performance may be limited");
+        }
+      }
+      else
+      {
+        Serial.println("Failed to initialize PSRAM buffer with maximum size");
+        // Try with default size as fallback
+        if (g_psramBuffer.init())
+        {
+          Serial.printf("Initialized with default size: %u bytes\n", g_psramBuffer.getSize());
+        }
+      }
     }
     else
     {
       Serial.println("\nPSRAM is not available. SD card operations will use regular memory.");
+      // Initialize with default size in regular memory
+      g_psramBuffer.init();
     }
 
     Serial.println("\n\n=== ESP32-S3 SD Card Server Starting ===");
@@ -682,12 +710,12 @@ void setup() {
     Serial.println("Using pins:");
     Serial.printf("CMD: %d, CLK: %d, D0: %d\n", SD_MMC_CMD, SD_MMC_CLK, SD_MMC_D0);
 
-    // Try watchdog setup
+    // Try watchdog setup with longer timeout for PSRAM operations
     Serial.println("Setting up watchdog...");
     try {
-        esp_task_wdt_init(15, true); // 15 seconds timeout, panic on timeout
-        esp_task_wdt_add(NULL);      // Add current thread to WDT watch
-        Serial.println("Watchdog initialized successfully");
+      esp_task_wdt_init(30, true); // 30 seconds timeout, panic on timeout
+      esp_task_wdt_add(NULL);      // Add current thread to WDT watch
+      Serial.println("Watchdog initialized successfully with 30 second timeout");
     } catch(...) {
         Serial.println("Watchdog initialization failed, continuing without it");
     }
@@ -900,33 +928,41 @@ void setup() {
                 }
             }
 
-            // 初始化PSRAM缓冲区
+            // 初始化PSRAM缓冲区 - 使用最大缓冲区提高上传速度
             if (psramFound())
             {
-              // 尝试初始化PSRAM缓冲区
-              if (!g_psramBuffer.isInitialized())
+              // 尝试使用更大的缓冲区进行文件上传
+              size_t uploadBufferSize = PSRAM_BUFFER_SIZE_LARGE; // 使用较大的缓冲区进行上传
+
+              // 如果缓冲区已经初始化，但大小不够，尝试调整大小
+              if (g_psramBuffer.isInitialized() && g_psramBuffer.getSize() < uploadBufferSize)
               {
-                if (g_psramBuffer.init())
-                {
-                  usePSRAM = true;
-                  psramBuffer = g_psramBuffer.getBuffer();
-                  bufferSize = g_psramBuffer.getSize();
-                  Serial.printf("Using PSRAM buffer for file upload: %u bytes\n", bufferSize);
-                  Serial.printf("Buffer is in %s\n", g_psramBuffer.isPSRAM() ? "PSRAM" : "regular memory");
-                }
-                else
-                {
-                  Serial.println("Failed to initialize PSRAM buffer, using direct writes");
-                  usePSRAM = false;
-                  psramBuffer = nullptr;
-                  bufferSize = 0;
-                }
+                Serial.printf("Resizing buffer for upload from %u to %u bytes\n",
+                              g_psramBuffer.getSize(), uploadBufferSize);
+                g_psramBuffer.resize(uploadBufferSize);
               }
-              else
+              else if (!g_psramBuffer.isInitialized())
+              {
+                // 如果还没有初始化，使用较大的缓冲区初始化
+                g_psramBuffer.init(uploadBufferSize);
+              }
+
+              // 检查初始化状态
+              if (g_psramBuffer.isInitialized())
               {
                 usePSRAM = true;
                 psramBuffer = g_psramBuffer.getBuffer();
                 bufferSize = g_psramBuffer.getSize();
+                Serial.printf("Using PSRAM buffer for file upload: %u bytes (%.2f KB)\n",
+                              bufferSize, bufferSize / 1024.0);
+                Serial.printf("Buffer is in %s\n", g_psramBuffer.isPSRAM() ? "PSRAM" : "regular memory");
+              }
+              else
+              {
+                Serial.println("Failed to initialize PSRAM buffer, using direct writes");
+                usePSRAM = false;
+                psramBuffer = nullptr;
+                bufferSize = 0;
               }
             }
             else
@@ -1047,17 +1083,44 @@ void setup() {
         // 先写入测试文件
         writeFile(SD_MMC, testFilePath, testMessage);
 
+        // 重置看门狗计时器
+        esp_task_wdt_reset();
+
+        // 尝试调整缓冲区大小以获得最佳性能
+        if (psramFound())
+        {
+          // 尝试使用较大的缓冲区进行测试，但不要太大以避免超时
+          size_t testBufferSize = PSRAM_BUFFER_SIZE_LARGE; // 使用中等大小的缓冲区
+          if (g_psramBuffer.getSize() < testBufferSize)
+          {
+            Serial.printf("Resizing buffer for performance test from %u to %u bytes\n",
+                          g_psramBuffer.getSize(), testBufferSize);
+            g_psramBuffer.resize(testBufferSize);
+            Serial.printf("New buffer size: %u bytes (%.2f KB)\n",
+                          g_psramBuffer.getSize(), g_psramBuffer.getSize() / 1024.0);
+          }
+        }
+
+        // 重置看门狗计时器
+        esp_task_wdt_reset();
+
         // 执行标准测试
         Serial.println("\n=== Standard File I/O Test ===");
         uint32_t startStd = millis();
         testFileIO(SD_MMC, testFilePath);
         uint32_t endStd = millis();
 
+        // 重置看门狗计时器
+        esp_task_wdt_reset();
+
         // 执行PSRAM增强测试
         Serial.println("\n=== PSRAM Enhanced File I/O Test ===");
         uint32_t startPSRAM = millis();
         testFileIO_PSRAM(SD_MMC, testFilePath);
         uint32_t endPSRAM = millis();
+
+        // 重置看门狗计时器
+        esp_task_wdt_reset();
 
         // 构建响应
         String response = "<html><head><title>SD Card Performance Test</title>";
@@ -1075,11 +1138,34 @@ void setup() {
         if (psramFound()) {
             size_t psramSize = ESP.getPsramSize();
             size_t freePsram = ESP.getFreePsram();
+            size_t usedPsram = psramSize - freePsram;
+            float usagePercent = usedPsram * 100.0 / psramSize;
+
             response += "<p>PSRAM is available: " + String(psramSize / 1024) + " KB total, " +
-                       String(freePsram / 1024) + " KB free (" +
-                       String((psramSize - freePsram) * 100.0 / psramSize, 1) + "% used)</p>";
-            response += "<p>PSRAM Buffer Size: " + String(g_psramBuffer.getSize() / 1024) + " KB</p>";
+                        String(freePsram / 1024) + " KB free (" +
+                        String(usagePercent, 1) + "% used)</p>";
+
+            // 添加更多详细信息
+            response += "<p>Used PSRAM: " + String(usedPsram / 1024) + " KB</p>";
+            response += "<p>Largest free block: " +
+                        String(heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM) / 1024) + " KB</p>";
+
+            // 缓冲区信息
+            response += "<h3>Buffer Information</h3>";
+            response += "<p>Current buffer size: " + String(g_psramBuffer.getSize() / 1024) + " KB</p>";
             response += "<p>Buffer is in " + String(g_psramBuffer.isPSRAM() ? "PSRAM" : "regular memory") + "</p>";
+
+            // 添加推荐缓冲区大小
+            response += "<h3>Recommended Buffer Sizes</h3>";
+            size_t maxAllowedSize = freePsram * PSRAM_USAGE_PERCENT;
+            response += "<p>Maximum recommended: " + String(maxAllowedSize / 1024) + " KB</p>";
+
+            // 计算不同场景的最佳缓冲区大小
+            size_t optimalDefault = min(maxAllowedSize, (size_t)PSRAM_BUFFER_SIZE_DEFAULT);
+            size_t optimalLarge = min(maxAllowedSize, (size_t)PSRAM_BUFFER_SIZE_LARGE);
+            size_t optimalMax = min(maxAllowedSize, (size_t)PSRAM_BUFFER_SIZE_MAX);
+
+            response += "<p>Default: " + String(optimalDefault / 1024) + " KB | " + "Large: " + String(optimalLarge / 1024) + " KB | " + "Maximum: " + String(optimalMax / 1024) + " KB</p>";
         } else {
             response += "<p>PSRAM is not available on this device.</p>";
         }
